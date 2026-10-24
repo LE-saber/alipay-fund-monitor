@@ -1,89 +1,78 @@
-# 支付宝基金监控 · 策略交易（AutoX.js）
+# Alipay Fund Monitor
 
-> ⚠️ **本项目会自动执行真实支付宝基金买入/卖出，涉及真实资金。使用前务必阅读[风险提示](#风险提示)。**
+[English](README.md) · [简体中文](README.zh-CN.md) · [繁體中文](README.zh-TW.md) · [日本語](README.ja.md)
 
-基于 [AutoX.js](https://github.com/aiselp/AutoX)（Android 无障碍服务）的支付宝基金持仓监控 + 自动化交易工具：采集全部持仓基金并展示，按策略模板自动买卖，含 dry-run 模拟、真实小额测试入口、审计日志。
+**Android fund-position monitoring and strategy automation with [AutoX.js](https://github.com/aiselp/AutoX).**
 
-## 风险提示
+> **Real-money capability:** live mode can buy and sell funds in Alipay and cause real charges. The dedicated CNY 1 test is also a real purchase. Start with the default dry-run mode and inspect the plan before enabling any live action.
 
-- **真实资金**：真实模式下脚本会按配置自动买入/卖出基金，产生真实扣款，**不可撤销**。
-- **个人自用**：仅供作者个人学习与使用，**不构成任何投资建议**。
-- **合规**：自动化操作支付宝可能违反其用户协议，使用风险自负。
-- **无担保**：按 MIT 许可「as is」提供，不对任何资金损失负责。请务必先用 dry-run 模拟、再用最小金额（1 元）真实测试验证后再放开。
+This personal-use project reads holdings through Android accessibility, displays fund cards and runs configured strategies. It is not investment advice. Automation may conflict with platform terms or break after UI changes; the MIT license provides no warranty against financial loss.
 
-## 功能
+## Features
 
-- **持仓采集**：自动进入「理财-基金-持有」页，采集全部基金的 名称/持仓金额/昨日收益/持有收益/收益率，合计与页面总额对平。
-- **卡片展示**：手机端 UI（红涨绿跌），悬浮窗实时显示采集/交易/策略进度。
-- **运行历史**：每次策略运行保存为独立批次，可查看完成/暂停/异常状态、成交汇总和逐笔买卖明细（本地保留最近 100 次）。
-- **暂停与续跑**：策略进度浮窗可在当前单笔安全结束后暂停；下次点运行会提示继续未完成批次，并从下一笔未执行操作续跑。
-- **原子交易**：`buy` / `sell`，支付密码经 Android Keystore（AES-GCM）加密落盘，支持 dry-run（走到密码页前停止）、大额二次确认、审计日志。
-- **策略引擎**（四模板，按「组别」控制作用范围，冲突取金额最高）：
-  - **底仓 base**：持仓 < 目标 → 补仓
-  - **定投 dca**：组别级金额，组内每只各买一笔
-  - **降本 costReduce**：亏损按档位加码
-  - **止盈 takeProfit**：收益率达档卖等比份额
-  - 执行序：先卖后买，逐只 try/catch，单只失败不级联。
-- **真实测试（1 元）**：专用入口，对探针筛出的 1 元起购基金真实买入 1 元，验证连续支付链路（金额恒定 1 元，超购在结构上不可能）。
+- Collect fund names, holding amounts, daily/holding returns and rates from Alipay's fund-holdings screen; reconcile collected totals with the page.
+- Phone UI with search/sort, red-for-gain/green-for-loss cards and floating collection/strategy progress.
+- Per-run history (the latest 100 runs), order details, pause after the current operation and resume from persisted batch progress.
+- Buy/sell flows with local audit records and AES-GCM payment-password storage backed by Android Keystore. Purchases additionally use amount guards and large-amount confirmation.
+- Four configurable strategy templates, executed as a sell phase followed by a buy phase.
 
-## 安全机制
+### Strategy semantics
 
-- `dryRun` 默认开启（模拟·不下单）；真实模式强制要求已设支付密码。
-- `checkGuard` 校验金额类型 / 小数精度（≤2 位）/ 上下限；大额二次确认弹窗。
-- 真实测试入口金额恒定 1 元；min > 1 的基金会被支付宝拒（记 error 跳过，不扣款）。
-- 每只交易独立 try/catch，单只异常不中断批次；失败审计 + 退出回持有页兜底重导航。
-- 批次计划与执行游标逐笔落盘；异常退出时，正在提交且结果不确定的一笔会标记为“待核对”并跳过续跑，避免重复下单。
-- 审计日志：`/sdcard/Download/alipay_trade.log`。
+| Template | Planning behavior |
+| --- | --- |
+| `base` | If holding value is below the configured target, propose the configured buy amount |
+| `dca` | Propose a buy for each fund in enabled groups, using the highest matching group amount |
+| `costReduce` | For a loss, use the first matching enabled loss tier or the enabled fallback |
+| `takeProfit` | Use the highest matching enabled profit tier and sell its configured share fraction |
 
-## 技术栈
+For buys, `base` and `dca` compete by amount, with `base` winning a tie. A matching `costReduce` amount is **added** to that winner and combined into one buy for the fund. The loss-reduction component is not discarded by a universal “take the largest amount” rule.
 
-- **AutoX.js v6**（Android 无障碍服务，JavaScript；实测红米 HyperOS / Android 15）
-- **VSCode + Auto.js-Autox.js-VSCodeExt**（Mac ↔ 手机，WiFi 远程）
-- **node**（纯逻辑测试）
+## Execution safeguards and limits
 
-## 目录结构
+- `dryRun` defaults to `true`; the dry-run flow stops before password submission. Live operation requires a configured payment password.
+- Buy-side guards validate amount type, decimal precision, minimum/maximum and confirmation threshold. Sell flows use share counts or ratios and do not apply these buy-side amount limits or large-amount confirmation thresholds.
+- A failed fund operation is handled separately; failures and navigation recovery are recorded.
+- Persisted batch state tracks completed and uncertain operations. Interrupted in-flight operations are marked for reconciliation and skipped on resume to avoid blindly retrying a purchase.
+- The dedicated real-test path fixes the requested amount at CNY 1. Eligibility, platform rejection and the actual result still depend on Alipay; it is not a no-risk sandbox.
+- Audit file: `/sdcard/Download/alipay_trade.log`. Treat logs, holdings and payment settings as private data.
 
-```
-alipay-fund-monitor/
-├── main.js                 # 手机端 App(自包含:采集+展示+交易+策略)
-├── project.json            # AutoX.js 项目配置
-├── src/                    # 纯逻辑(node 可测,@sync 进 main.js)
-│   ├── strategy-logic.js   #   策略计划 planBuys/planSells
-│   ├── trade-logic.js      #   护栏/份额/审计
-│   └── collector.js recon.js probe-noscroll.js config.js storage.js
-├── test/                   # node 测试(三套全绿)
-├── verified-flows/         # 已跑通端到端流程脚本 + README(导航/dump/退出复用源)
-├── probe-minbuy.js         # 起购金额探针(扫持仓基金筛 1 元起购)
-├── probe[1-5]*.js          # 开发期侦察脚本
-├── monitor/                # ADB 驱动采集 + HTML 面板(Mac 端)
-└── release/                # 打包源(project.json + main.js) + APK(gitignored)
-```
+## Run on Android
 
-## 快速开始
+Requires **AutoX.js v6**, accessibility permission and floating-window permission. Existing project notes describe a Redmi HyperOS / Android 15 environment; this is not a claim of universal device compatibility.
 
-### 手机端运行（F5）
-1. 手机装 AutoX.js v6，开启其**无障碍服务** + **悬浮窗**权限。
-2. VSCode 装 Auto.js-Autox.js-VSCodeExt，WiFi 连手机，打开 `main.js` → F5。
-3. 点 **↻** 采集；点 **⚙** 配置交易/策略；点 **▶** 运行策略。
+1. Install AutoX.js v6 and grant the required permissions on your own phone.
+2. Use the Auto.js–Autox.js VSCode extension to connect over Wi-Fi, open `main.js` and run it with F5.
+3. Use **↻** to collect, **⚙** to review settings and strategies, and **▶** to open the strategy run flow.
+4. Keep dry-run enabled while validating navigation, collection and the proposed plan.
 
-### 打包成 APK
-1. `release/` 内是最新打包源（`main.js` + `project.json`，gitignored 不入库）。
-2. `adb push release/ /sdcard/脚本/<项目名>/`。
-3. 手机 AutoX.js v6 长按项目 → ⋮ →「打包应用」→ 类型选「界面应用」→ 在线打包（约 30–60s）。
-4. `adb pull` APK 回本地 → `adb install`（注意 `pm install /sdcard/x.apk` 会失败，须 `adb install`）。
+The application's interface remains Chinese. These README translations do not change application behavior or UI language.
 
-> 导航 / dump / 退出策略的踩坑沉淀见 [`verified-flows/README.md`](./verified-flows/README.md)。
+## Packaging
 
-## 开发
+`project.json` declares `main.js` as the entry point and `res/logo.png` as the icon. The historical workflow uses a locally prepared `release/` directory, which is ignored by Git and is not supplied in this checkout. Prepare the project files/resources locally, copy them to the phone, and choose **UI application** in AutoX.js's packaging menu. Use `adb install` for a generated APK. See the [original navigation and payment-flow notes](verified-flows/README.md) before changing device flows.
 
-纯逻辑（`src/strategy-logic.js`、`src/trade-logic.js`）与 `main.js` 内联同一份（`@sync`），node 测试三套：
+## Development and source map
+
+| Path | Purpose |
+| --- | --- |
+| `main.js` | Self-contained Android UI, collection, trade and strategy flows |
+| `src/` | Extracted logic, configuration and diagnostics; corresponding logic is inlined in `main.js` |
+| `test/` | Node-based pure-logic tests |
+| `verified-flows/` | Recorded navigation/payment-flow scripts and explanations |
+| `monitor/` | ADB collection and an HTML monitoring panel |
+| `probe*.js`, `test_pwd_flow.js` | Device diagnostics; inspect before running because some reach payment screens |
+
+Available pure-logic checks:
 
 ```bash
-node test/strategy-logic.test.js   # 策略计划
-node test/trade-logic.test.js      # 护栏/份额/审计
+node test/strategy-logic.test.js
+node test/trade-logic.test.js
 node test/apply-query-sort.test.js
+node test/run-history.test.js
 ```
 
-## 许可证
+These do not verify the current Alipay UI or a live transaction. Documentation maintenance does not run payment flows.
 
-[MIT](./LICENSE)
+## License
+
+[MIT](LICENSE). Copyright and attribution remain as recorded in the license.
