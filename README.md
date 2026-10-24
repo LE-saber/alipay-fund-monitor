@@ -13,7 +13,7 @@ This personal-use project reads holdings through Android accessibility, displays
 - Collect fund names, holding amounts, daily/holding returns and rates from Alipay's fund-holdings screen; reconcile collected totals with the page.
 - Phone UI with search/sort, red-for-gain/green-for-loss cards and floating collection/strategy progress.
 - Per-run history (the latest 100 runs), order details, pause after the current operation and resume from persisted batch progress.
-- Buy/sell flows with amount checks, large-amount confirmation, local audit records and AES-GCM payment-password storage backed by Android Keystore.
+- Buy/sell flows with local audit records and AES-GCM payment-password storage backed by Android Keystore. Purchases additionally use amount guards and large-amount confirmation.
 - Four configurable strategy templates, executed as a sell phase followed by a buy phase.
 
 ### Strategy semantics
@@ -30,7 +30,7 @@ For buys, `base` and `dca` compete by amount, with `base` winning a tie. A match
 ## Execution safeguards and limits
 
 - `dryRun` defaults to `true`; the dry-run flow stops before password submission. Live operation requires a configured payment password.
-- Guards validate amount type, decimal precision, minimum/maximum and confirmation threshold.
+- Buy-side guards validate amount type, decimal precision, minimum/maximum and confirmation threshold. Sell flows use share counts or ratios and do not apply these buy-side amount limits or large-amount confirmation thresholds.
 - A failed fund operation is handled separately; failures and navigation recovery are recorded.
 - Persisted batch state tracks completed and uncertain operations. Interrupted in-flight operations are marked for reconciliation and skipped on resume to avoid blindly retrying a purchase.
 - The dedicated real-test path fixes the requested amount at CNY 1. Eligibility, platform rejection and the actual result still depend on Alipay; it is not a no-risk sandbox.
